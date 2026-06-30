@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transfer-service
+  namespace: transfer-platform
+  labels:
+    app: transfer-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transfer-service
+  template:
+    metadata:
+      labels:
+        app: transfer-service
+    spec:
+      containers:
+        - name: transfer-service
+          image: transfer-service:0.1.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            # In-cluster DNS name of the account-service Service.
+            - name: ACCOUNT_SERVICE_URL
+              value: "http://account-service:8081"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transfer-service
+  namespace: transfer-platform
+spec:
+  # LoadBalancer: transfer-service is the only externally exposed entry point.
+  type: LoadBalancer
+  selector:
+    app: transfer-service
+  ports:
+    - port: 80
+      targetPort: 8080

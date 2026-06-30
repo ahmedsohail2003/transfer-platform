@@ -1,0 +1,18 @@
+# Runs the whole money-transfer platform locally: account-service + transfer-service.
+#   docker compose up --build
+# Then: transfer-service on http://localhost:8080, account-service on http://localhost:8081
+services:
+  account-service:
+    build: ./account-service
+    ports:
+      - "8081:8081"
+
+  transfer-service:
+    build: ./transfer-service
+    ports:
+      - "8080:8080"
+    environment:
+      # Reach account-service by its compose service name over the shared network.
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+    depends_on:
+      - account-service

@@ -1,0 +1,22 @@
+# Render Blueprint — deploys both services from their Dockerfiles.
+# At render.com: New → Blueprint → pick this repo. See DEPLOY.md for the one manual wiring step.
+services:
+  - type: web
+    name: account-service
+    runtime: docker
+    rootDir: account-service
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /actuator/health
+
+  - type: web
+    name: transfer-service
+    runtime: docker
+    rootDir: transfer-service
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      # Set this to the account-service URL Render assigns (see DEPLOY.md).
+      - key: ACCOUNT_SERVICE_URL
+        sync: false
