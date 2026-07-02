@@ -1,5 +1,7 @@
 # Transfer Platform
 
+[![CI](https://github.com/ahmedsohail2003/transfer-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedsohail2003/transfer-platform/actions/workflows/ci.yml)
+
 An **e-Transfer-style money-movement platform** split into **two Spring Boot microservices**
 that communicate over REST. It started as a single service and was decomposed to practice
 distributed backend design: independent services, service-to-service calls, and **saga-style
@@ -122,4 +124,13 @@ cd transfer-service && mvn test    # transfer-service suite (account-service moc
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) builds and tests **both** services on every
-push and pull request via a matrix job.
+push and pull request via a matrix job. CI also validates the Docker Compose configuration
+and Kubernetes manifests.
+
+## Scope and limitations
+
+This is an educational portfolio system, not production banking infrastructure. It uses
+in-memory H2 databases and a synchronous REST-orchestrated compensation flow. A production
+payments system would additionally require durable messaging, idempotency keys, authentication
+and authorization, persistent databases, distributed tracing, reconciliation tooling, and
+formal security and compliance controls.
