@@ -134,3 +134,7 @@ in-memory H2 databases and a synchronous REST-orchestrated compensation flow. A 
 payments system would additionally require durable messaging, idempotency keys, authentication
 and authorization, persistent databases, distributed tracing, reconciliation tooling, and
 formal security and compliance controls.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for a threat model and NIST CSF 2.0 control mapping.
