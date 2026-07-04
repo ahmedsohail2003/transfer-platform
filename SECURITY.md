@@ -38,17 +38,21 @@ this system; the assessment treats the assets as if there were.
 |---|---|---|---|
 | **S**poofing | Any caller can claim to be any account holder | **None — no authentication exists** | Open. Highest-priority gap (see §4, G-1) |
 | **T**ampering | Malformed or manipulated amounts; concurrent balance corruption | Bean Validation on every DTO (`@DecimalMin("0.01")`, `@Digits(integer=17, fraction=2)` in `TransferRequest` / `AmountRequest`); money as `BigDecimal`, never floating point; optimistic locking via `@Version` on `Account` prevents lost updates from concurrent transfers | Transport is plain HTTP in dev/compose; TLS must terminate at the edge in any real deployment (G-2) |
-| **R**epudiation | "That transfer never happened" / "I never authorized it" | Every attempt is recorded as a `Transfer` row with status `COMPLETED` or `FAILED` and a `createdAt` timestamp; debits, credits, compensation, and refund failures are logged (`TransferService`, `AccountService`) | Without authentication there is no *actor* identity to bind to the record, so attribution is incomplete until G-1 is closed |
+| **R**epudiation | "That transfer never happened" / "I never authorized it" | Every transfer that reaches the money-movement step is recorded as a `Transfer` row with status `COMPLETED` or `FAILED` (failed rows carry a `failureReason`) and a `createdAt` timestamp — including the double-failure path where the compensating refund itself fails, whose row is flagged `REQUIRES_RECONCILIATION` and persisted *before* the error propagates; debits, credits, compensation, and refund failures are logged (`TransferService`, `AccountService`) | Without authentication there is no *actor* identity to bind to the record, so attribution is incomplete until G-1 is closed |
 | **I**nformation disclosure | Stack traces, internals, or data leaking through errors and endpoints | `GlobalExceptionHandler` returns a uniform `ApiError` JSON shape and maps unexpected errors to a generic 500 with no internal detail; Actuator exposure is restricted to `/actuator/health` only (`application.properties`) | Swagger UI is open (acceptable for a demo; gate or disable in production); H2 uses default `sa` credentials (G-3) |
 | **D**enial of service | Request floods; resource exhaustion | Kubernetes resource requests/limits (cpu 250m–500m, mem 256–512Mi) bound per-pod blast radius; liveness/readiness probes restart unhealthy pods | No rate limiting or request throttling at the API layer (G-4) |
 | **E**levation of privilege | Any caller performing admin-shaped actions (open accounts, credit arbitrarily) | **None — there are no roles or permissions** | Open; same root cause as G-1 |
 
 A note on the failure path: if a credit fails after a debit, `TransferService`
-compensates by refunding the sender and records the attempt as `FAILED`. If the
-*refund itself* fails, the code deliberately logs at `CRITICAL` level flagging
-"manual reconciliation required" rather than silently swallowing a
-double-failure — a small example of designing for the incident-response path,
-not just the happy path.
+compensates by refunding the sender and records the attempt as `FAILED` with a
+`failureReason`. If the *refund itself* fails, the code logs at `CRITICAL`
+level and persists the `FAILED` row — flagged `REQUIRES_RECONCILIATION` —
+*before* rethrowing, so the worst-case outcome (sender debited, refund failed)
+reaches the audit trail even though the request errors out; if even that audit
+write fails, the persistence error is attached to the refund failure as a
+suppressed exception rather than masking it. Unit tests pin this behavior by
+failing the credit and the refund together (`TransferServiceTest`) — a small
+example of designing for the incident-response path, not just the happy path.
 
 ## 3. Control mapping — NIST CSF 2.0
 
@@ -58,7 +62,7 @@ not just the happy path.
 | **Identify (ID)** | Asset and data ownership is explicit: each service owns its own database and entities; the REST contract is the only shared surface; this document records the risk assessment (ID.RA) | Repo structure; this file |
 | **Protect (PR)** | *Data security (PR.DS):* strict input validation on all DTOs; `BigDecimal` money; the no-overdraft invariant enforced inside the `Account` entity itself. *Identity (PR.AA):* — **gap, none**. *Platform security (PR.PS):* multi-stage Docker builds running a slim JRE (smaller attack surface); network segmentation via `ClusterIP` so account-service is never internet-reachable; config and service URLs injected via environment, never hardcoded | `AmountRequest.java`, `Account.debit()`, `Dockerfile`s, `k8s/*.yaml` |
 | **Detect (DE)** | Structured logging of every money movement (debit, credit, compensation) with account IDs and amounts; health probes as basic liveness monitoring; CI runs the full test suite and validates compose + k8s manifests on every push | `TransferService.java`, `k8s/*.yaml`, `.github/workflows/ci.yml` |
-| **Respond (RS)** | The compensation path is a designed failure response: refund the sender, persist a `FAILED` audit row, surface a `502` to the caller; refund-failure escalates loudly for manual reconciliation instead of masking the incident | `TransferService.compensate()` |
+| **Respond (RS)** | The compensation path is a designed failure response: refund the sender, persist a `FAILED` audit row, surface a `502` to the caller; a refund-failure is still persisted as a `FAILED` row flagged `REQUIRES_RECONCILIATION` before the error propagates, and escalates loudly for manual reconciliation instead of masking the incident | `TransferService.transfer()` / `compensate()` |
 | **Recover (RC)** | **Largely a gap by design:** H2 in-memory storage means no durability and no restore path. The deployment docs note the intended remediation (managed Postgres via standard Spring datasource env vars, no code change) | `DEPLOY.md` (G-5) |
 
 ## 4. Gap assessment and remediation roadmap (prioritized)

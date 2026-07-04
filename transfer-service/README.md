@@ -7,8 +7,10 @@ over HTTP — it owns **no Account table** of its own.
 A transfer debits the sender and credits the receiver across two separate HTTP calls.
 Because those two legs are not one local database transaction, the credit is guarded by
 **compensation**: if crediting the receiver fails after the sender has been debited, the
-sender is refunded, the transfer is recorded as `FAILED`, and the caller gets a
-`502 Bad Gateway`.
+sender is refunded, the transfer is recorded as `FAILED` (with a `failureReason`), and the
+caller gets a `502 Bad Gateway`. If the refund itself also fails, the `FAILED` row is
+still persisted — flagged `REQUIRES_RECONCILIATION` — before the error propagates, so the
+worst-case outcome always reaches the audit trail.
 
 ## Tech stack
 

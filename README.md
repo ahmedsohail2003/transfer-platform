@@ -38,7 +38,9 @@ transaction. `transfer-service` runs a small saga and **compensates** on partial
 3. Reject currency mismatches (`400`).
 4. **Debit** the sender via account-service (`422` if insufficient funds — abort, nothing moved).
 5. **Credit** the receiver. **If the credit fails, compensate** by crediting the sender back
-   (a refund), record the transfer as `FAILED`, and return `502`.
+   (a refund), record the transfer as `FAILED`, and return `502`. If the refund itself also
+   fails, the `FAILED` row is still recorded — flagged `REQUIRES_RECONCILIATION` for manual
+   follow-up — before the error surfaces.
 6. On success, record the transfer as `COMPLETED` and return `201`.
 
 ## Tech stack
