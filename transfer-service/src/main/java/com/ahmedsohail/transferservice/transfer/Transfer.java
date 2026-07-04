@@ -40,6 +40,15 @@ public class Transfer {
     @Column(length = 140)
     private String memo;
 
+    /**
+     * Why a {@code FAILED} transfer failed; {@code null} for {@code COMPLETED} transfers.
+     * When the compensating refund itself failed, the reason starts with the
+     * {@code REQUIRES_RECONCILIATION} marker so operators can find rows that need a
+     * manual balance fix.
+     */
+    @Column(length = 255)
+    private String failureReason;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -49,12 +58,18 @@ public class Transfer {
 
     public Transfer(Long fromAccountId, Long toAccountId, BigDecimal amount, String currency,
                     TransferStatus status, String memo) {
+        this(fromAccountId, toAccountId, amount, currency, status, memo, null);
+    }
+
+    public Transfer(Long fromAccountId, Long toAccountId, BigDecimal amount, String currency,
+                    TransferStatus status, String memo, String failureReason) {
         this.fromAccountId = fromAccountId;
         this.toAccountId = toAccountId;
         this.amount = amount;
         this.currency = currency;
         this.status = status;
         this.memo = memo;
+        this.failureReason = failureReason;
         this.createdAt = Instant.now();
     }
 
@@ -84,6 +99,10 @@ public class Transfer {
 
     public String getMemo() {
         return memo;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
     }
 
     public Instant getCreatedAt() {

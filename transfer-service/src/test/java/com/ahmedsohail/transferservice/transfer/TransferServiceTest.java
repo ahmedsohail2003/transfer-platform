@@ -70,6 +70,7 @@ class TransferServiceTest {
         assertThat(result.getCurrency()).isEqualTo("CAD");
         assertThat(result.getFromAccountId()).isEqualTo(1L);
         assertThat(result.getToAccountId()).isEqualTo(2L);
+        assertThat(result.getFailureReason()).isNull();
     }
 
     @Test
@@ -149,6 +150,59 @@ class TransferServiceTest {
         assertThat(saved.getValue().getStatus()).isEqualTo(TransferStatus.FAILED);
         assertThat(saved.getValue().getFromAccountId()).isEqualTo(1L);
         assertThat(saved.getValue().getToAccountId()).isEqualTo(2L);
+        assertThat(saved.getValue().getFailureReason()).contains("sender was refunded");
+    }
+
+    @Test
+    void transfer_whenCreditAndRefundBothFail_stillRecordsFailedRowAndPropagates() {
+        when(accountClient.getAccount(1L)).thenReturn(sender);
+        when(accountClient.getAccount(2L)).thenReturn(receiver);
+        RuntimeException creditFailure = new RuntimeException("credit failed: account-service unavailable");
+        RuntimeException refundFailure = new RuntimeException("refund failed: account-service still unavailable");
+        when(accountClient.credit(eq(2L), any(BigDecimal.class))).thenThrow(creditFailure);
+        when(accountClient.credit(eq(1L), any(BigDecimal.class))).thenThrow(refundFailure);
+        when(transferRepository.save(any(Transfer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // The refund failure still propagates — nothing may mask the incident — carrying
+        // the original credit failure as a suppressed exception.
+        assertThatThrownBy(() ->
+                transferService.transfer(new TransferRequest(1L, 2L, new BigDecimal("30.00"), "rent")))
+                .isSameAs(refundFailure)
+                .satisfies(thrown -> assertThat(thrown.getSuppressed()).contains(creditFailure));
+
+        // AND the worst-case outcome (sender debited, refund failed) is still persisted as
+        // a FAILED row, flagged for manual reconciliation — the audit trail must never lose
+        // exactly this incident.
+        ArgumentCaptor<Transfer> saved = ArgumentCaptor.forClass(Transfer.class);
+        verify(transferRepository).save(saved.capture());
+        Transfer failedRow = saved.getValue();
+        assertThat(failedRow.getStatus()).isEqualTo(TransferStatus.FAILED);
+        assertThat(failedRow.getFromAccountId()).isEqualTo(1L);
+        assertThat(failedRow.getToAccountId()).isEqualTo(2L);
+        assertThat(failedRow.getAmount()).isEqualByComparingTo("30.00");
+        assertThat(failedRow.getFailureReason()).startsWith(TransferService.REQUIRES_RECONCILIATION);
+    }
+
+    @Test
+    void transfer_whenFailedRowCannotBePersisted_refundFailureStillPropagates() {
+        when(accountClient.getAccount(1L)).thenReturn(sender);
+        when(accountClient.getAccount(2L)).thenReturn(receiver);
+        RuntimeException creditFailure = new RuntimeException("credit failed");
+        RuntimeException refundFailure = new RuntimeException("refund failed");
+        RuntimeException persistFailure = new RuntimeException("database unavailable");
+        when(accountClient.credit(eq(2L), any(BigDecimal.class))).thenThrow(creditFailure);
+        when(accountClient.credit(eq(1L), any(BigDecimal.class))).thenThrow(refundFailure);
+        when(transferRepository.save(any(Transfer.class))).thenThrow(persistFailure);
+
+        // Even if the audit write itself fails, the save was attempted and the refund
+        // failure (not the persistence error) is what propagates, with the other two
+        // failures attached as suppressed.
+        assertThatThrownBy(() ->
+                transferService.transfer(new TransferRequest(1L, 2L, new BigDecimal("30.00"), null)))
+                .isSameAs(refundFailure)
+                .satisfies(thrown -> assertThat(thrown.getSuppressed()).contains(creditFailure, persistFailure));
+
+        verify(transferRepository).save(any(Transfer.class));
     }
 
     @Test

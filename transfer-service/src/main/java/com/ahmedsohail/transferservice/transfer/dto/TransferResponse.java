@@ -6,7 +6,7 @@ import com.ahmedsohail.transferservice.transfer.TransferStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** API view of a {@link Transfer}. */
+/** API view of a {@link Transfer}. {@code failureReason} is {@code null} unless the transfer FAILED. */
 public record TransferResponse(
         Long id,
         Long fromAccountId,
@@ -14,6 +14,7 @@ public record TransferResponse(
         BigDecimal amount,
         String currency,
         TransferStatus status,
+        String failureReason,
         String memo,
         Instant createdAt
 ) {
@@ -25,6 +26,7 @@ public record TransferResponse(
                 transfer.getAmount(),
                 transfer.getCurrency(),
                 transfer.getStatus(),
+                transfer.getFailureReason(),
                 transfer.getMemo(),
                 transfer.getCreatedAt()
         );
